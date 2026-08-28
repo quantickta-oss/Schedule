@@ -1,10 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- Paste Firebase code right here -->
+  <meta charset="UTF-8">
+  <title>Schedule</title>
+
+  <!-- Firebase Core SDK -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <!-- Firebase Realtime Database SDK -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
   <script>
+    // Firebase Configuration
     const firebaseConfig = {
       apiKey: "AIzaSyDVze6LfITNekm_Vld5_1HO7LGFfhnjcBE",
       authDomain: "schedule-b38b6.firebaseapp.com",
@@ -15,15 +20,11 @@
       appId: "1:262859085652:web:a6f7a08243cb53cb1ce541"
     };
 
+    // Initialize Firebase
     firebase.initializeApp(firebaseConfig);
     const database = firebase.database();
   </script>
 
-  <meta charset="UTF-8">
-  <title>Schedule</title>
-  ...
-<meta charset="UTF-8">
-<title>Schedule</title>
 <style>
   :root{
     --bg: #0b0d12;
@@ -171,7 +172,7 @@
   }
   .name{font-size:14.5px;font-weight:500;color:var(--ink);}
   .cell{
-    border-radius:9px;
+    border-radius:99px;
     text-align:center;
     padding:9px 6px;
     font-size:13px;
@@ -265,7 +266,6 @@
   .jtag{font-size:8px;padding:1px 4px;margin-left:2px;}
   .footnote{font-size:11px;margin-top:15px;}
 }
-
 </style>
 </head>
 <body>
@@ -314,7 +314,7 @@
   <div class="footnote"><b>Phone:</b> swipe the schedule left/right if needed. Tap any shift to edit it.<br><br><div style="opacity:.85;">
     Click any cell to cycle its status (Off → AM → PM → Overnight). Hassan automatically covers<br>
     if anyone is off that day — pick who and which shift, or choose "No one." Click the date to change it.<br>
-    Changes are saved in this browser — press <b>Save changes</b>. If Save doesn't work, use <b>Export</b> to<br>
+    Changes are synced live — press <b>Save changes</b>. If Save doesn't work, use <b>Export</b> to<br>
     download a backup file, and <b>Import</b> to load it back in later.
   </div>
 </div>
@@ -331,7 +331,7 @@ const groups = [
     {name:"Rami",    sched:["off","off","off","off","night"]},
   ]},
   {label:"Group 2", workers:[
-    {name:"Jason",  sched:["off","off","off","off","am"]},
+    {name:"Jason",   sched:["off","off","off","off","am"]},
     {name:"Moussa", sched:["off","off","off","off","pm"]},
     {name:"M.H.",   sched:["off","off","off","off","night"]},
   ]},
@@ -347,10 +347,9 @@ const groups = [
   ]},
 ];
 
-// per-day joker state: { coveringName, coveringShift, ownShift }
+// per-day joker state
 const jokerState = DAYS.map(()=>({coveringName:null, coveringShift:"am", ownShift:"off"}));
 
-const STORAGE_KEY = "schedule-state-v1";
 let dirty = false;
 let saving = false;
 
@@ -360,7 +359,7 @@ const saveStatus = document.getElementById("saveStatus");
 function updateSaveUI(){
   if(saving){
     saveBtn.disabled = true;
-    saveStatus.textContent = "Saving…";
+    saveStatus.textContent = "Saving to cloud…";
     saveStatus.className = "savestatus dirty";
   } else if(dirty){
     saveBtn.disabled = false;
@@ -368,7 +367,7 @@ function updateSaveUI(){
     saveStatus.className = "savestatus dirty";
   } else {
     saveBtn.disabled = true;
-    saveStatus.textContent = window.storage ? "All changes saved" : "Saved to this browser";
+    saveStatus.textContent = "Synced across devices";
     saveStatus.className = "savestatus saved";
   }
 }
@@ -379,31 +378,25 @@ function markDirty(){
 }
 
 function serializeState(){
-  return JSON.stringify({
+  return {
     date: dateInput.value,
     groups: groups.map(g => ({label: g.label, workers: g.workers.map(w => ({name:w.name, sched:w.sched}))})),
     jokerState
-  });
+  };
 }
 
+// Save to Firebase Database
 async function saveState(){
   saving = true;
   updateSaveUI();
   const payload = serializeState();
   try{
-    if(window.storage){
-      await window.storage.set(STORAGE_KEY, payload, false);
-    } else {
-      localStorage.setItem(STORAGE_KEY, payload);
-    }
+    await database.ref('scheduleData').set(payload);
     dirty = false;
   } catch(err){
     console.error("Save failed:", err);
     saveStatus.textContent = "Save failed: " + (err && err.message ? err.message : "unknown error");
     saveStatus.className = "savestatus dirty";
-    saving = false;
-    saveBtn.disabled = false;
-    return;
   }
   saving = false;
   updateSaveUI();
@@ -417,11 +410,13 @@ function applyLoadedData(data){
   }
   if(Array.isArray(data.groups)){
     data.groups.forEach((savedGroup, gi)=>{
-      savedGroup.workers.forEach((savedWorker, wi)=>{
-        if(groups[gi] && groups[gi].workers[wi]){
-          groups[gi].workers[wi].sched = savedWorker.sched;
-        }
-      });
+      if(savedGroup.workers && Array.isArray(savedGroup.workers)){
+        savedGroup.workers.forEach((savedWorker, wi)=>{
+          if(groups[gi] && groups[gi].workers[wi]){
+            groups[gi].workers[wi].sched = savedWorker.sched;
+          }
+        });
+      }
     });
   }
   if(Array.isArray(data.jokerState)){
@@ -431,28 +426,23 @@ function applyLoadedData(data){
   }
 }
 
-async function loadState(){
-  try{
-    if(window.storage){
-      const result = await window.storage.get(STORAGE_KEY, false);
-      if(result && result.value){
-        applyLoadedData(JSON.parse(result.value));
-      }
-    } else {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if(raw){
-        applyLoadedData(JSON.parse(raw));
-      }
+// Real-time Firebase Listener (Updates automatically on all devices)
+function listenForRealtimeUpdates(){
+  database.ref('scheduleData').on('value', (snapshot) => {
+    const data = snapshot.val();
+    if(data){
+      applyLoadedData(data);
+      renderAll();
+      dirty = false;
+      updateSaveUI();
     }
-  } catch(err){
-    // no saved state yet — that's fine, start fresh
-  }
+  });
 }
 
 saveBtn.onclick = saveState;
 
 document.getElementById("exportBtn").onclick = ()=>{
-  const blob = new Blob([serializeState()], {type:"application/json"});
+  const blob = new Blob([JSON.stringify(serializeState())], {type:"application/json"});
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -560,7 +550,6 @@ function renderJoker(){
     const wrap = document.createElement("div");
 
     if(offNames.length === 0){
-      // nobody off -> Hassan has his own shift, clickable like everyone else
       const box = document.createElement("div");
       box.className = "jcell";
 
@@ -580,7 +569,6 @@ function renderJoker(){
       box.appendChild(cell);
       wrap.appendChild(box);
     } else {
-      // someone off -> Hassan can cover, or explicitly cover no one
       if(state.coveringName !== null && !offNames.includes(state.coveringName)){
         state.coveringName = offNames[0];
       }
@@ -636,10 +624,10 @@ function renderAll(){
   renderJoker();
 }
 
-(async function init(){
-  await loadState();
+// App Initialization
+(function init(){
   renderAll();
-  updateSaveUI();
+  listenForRealtimeUpdates();
 })();
 </script>
 </body>
