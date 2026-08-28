@@ -23,6 +23,13 @@
     // Initialize Firebase
     firebase.initializeApp(firebaseConfig);
     const database = firebase.database();
+
+    // Check read-only state immediately before rendering
+    const urlParams = new URLSearchParams(window.location.search);
+    const isReadOnly = urlParams.get('view') === 'readonly';
+    if (isReadOnly) {
+      document.documentElement.classList.add('readonly-mode');
+    }
   </script>
 
 <style>
@@ -242,7 +249,21 @@
     margin-top:22px;line-height:1.6;
   }
 
-/* Mobile / tablet improvements */
+  /* HARD LOCK FOR READ-ONLY MODE */
+  .readonly-mode .savebar,
+  .readonly-mode .footnote {
+    display: none !important;
+  }
+  .readonly-mode .datepill,
+  .readonly-mode .cell,
+  .readonly-mode select {
+    pointer-events: none !important;
+    cursor: default !important;
+  }
+  .readonly-mode .datepill:hover {
+    border-color: var(--panel-border) !important;
+  }
+
 @media (max-width: 700px){
   body{padding:18px 10px 40px;}
   h1{font-size:27px;}
@@ -274,8 +295,8 @@
     <h1>Schedule</h1>
     <div class="sub">Monday to Friday</div>
     <div class="datepill" id="datePill">
-      📅 <span id="dateText">Friday, 28 August 2026</span>
-      <input type="date" id="dateInput" value="2026-08-28">
+      📅 <span id="dateText">Monday 24 August to Friday 28 August 2026</span>
+      <input type="date" id="dateInput" value="2026-08-24">
     </div>
     <div class="savebar">
       <button id="saveBtn" class="savebtn">Save changes</button>
@@ -320,35 +341,6 @@
 </div>
 
 <script>
-// Check for Read-Only mode from URL parameter (?view=readonly)
-const urlParams = new URLSearchParams(window.location.search);
-const isReadOnly = urlParams.get('view') === 'readonly';
-
-if (isReadOnly) {
-  window.addEventListener('DOMContentLoaded', () => {
-    // Hide controls
-    const savebar = document.querySelector('.savebar');
-    if (savebar) savebar.style.display = 'none';
-
-    const footnote = document.getElementById('footnoteText');
-    if (footnote) footnote.style.display = 'none';
-
-    // Disable date picker
-    const dateInput = document.getElementById('dateInput');
-    const datePill = document.getElementById('datePill');
-    if (dateInput) dateInput.disabled = true;
-    if (datePill) {
-      datePill.style.pointerEvents = 'none';
-      datePill.style.borderColor = 'var(--panel-border)';
-    }
-
-    // Disable clicks on shifts and drop-downs via CSS rule
-    const style = document.createElement('style');
-    style.innerHTML = '.cell, select { pointer-events: none !important; cursor: default !important; }';
-    document.head.appendChild(style);
-  });
-}
-
 const DAYS = ["Mon","Tue","Wed","Thu","Fri"];
 const STATUSES = ["off","am","pm","night"];
 const LABELS = {off:"Off", am:"AM", pm:"PM", night:"Overnight"};
@@ -458,7 +450,7 @@ function applyLoadedData(data){
   }
 }
 
-// Real-time Firebase Listener (Updates automatically on all devices)
+// Real-time Firebase Listener
 function listenForRealtimeUpdates(){
   database.ref('scheduleData').on('value', (snapshot) => {
     const data = snapshot.val();
@@ -502,15 +494,40 @@ document.getElementById("importInput").onchange = (e)=>{
 
 const dateInput = document.getElementById("dateInput");
 const dateText = document.getElementById("dateText");
+
 function updateDateText(){
-  const [y,m,d] = dateInput.value.split("-").map(Number);
-  const dt = new Date(y, m-1, d);
-  dateText.textContent = dt.toLocaleDateString(undefined, {weekday:"long", day:"numeric", month:"long", year:"numeric"});
+  const [y, m, d] = dateInput.value.split("-").map(Number);
+  const selectedDate = new Date(y, m - 1, d);
+  
+  // Calculate Monday of selected week
+  const dayOfWeek = selectedDate.getDay();
+  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  
+  const monday = new Date(selectedDate);
+  monday.setDate(selectedDate.getDate() + diffToMonday);
+  
+  // Calculate Friday of that week
+  const friday = new Date(monday);
+  friday.setDate(monday.getDate() + 4);
+
+  const formatDayMonth = (dt) => {
+    const day = dt.getDate();
+    const month = dt.toLocaleDateString(undefined, { month: 'long' });
+    return `${day} ${month}`;
+  };
+
+  const monStr = formatDayMonth(monday);
+  const friStr = formatDayMonth(friday);
+  const year = friday.getFullYear();
+
+  dateText.textContent = `Monday ${monStr} to Friday ${friStr} ${year}`;
 }
+
 dateInput.onchange = ()=>{
   updateDateText();
   markDirty();
 };
+
 document.getElementById("datePill").addEventListener("click", ()=>{
   if(isReadOnly) return;
   if(typeof dateInput.showPicker === "function"){
