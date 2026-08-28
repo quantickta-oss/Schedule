@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Schedule</title>
+<style>
+  :root{
+    --bg: #0b0d12;
+    --panel: #12151d;
+    --panel-border: #232733;
+    --ink: #eef1f6;
+    --sub: #8890a0;
+    --gold: #d8ad63;
+    --am: #a9d4f2;
+    --am-ink: #0d2b3f;
+    --pm: #f3cd9e;
+    --pm-ink: #3f2a0d;
+    --night: #d7c8f2;
+    --night-ink: #2a1f3f;
+    --off: #7c1f2c;
+    --off2: #9c2b3a;
+    --joker: #38b98c;
+    --joker-ink: #06251c;
+    --joker-soft: #163329;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(1200px 500px at 50% -10%, #161b26 0%, var(--bg) 60%);
+    color:var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+    padding:48px 20px 80px;
+  }
+  .wrap{max-width:1180px;margin:0 auto;}
+  header{text-align:center;margin-bottom:28px;}
+  h1{
+    margin:0 0 4px;
+    font-size:32px;
+    font-weight:800;
+    letter-spacing:0.2px;
+  }
+  .sub{color:var(--sub);font-size:15px;margin-bottom:22px;}
+  .savebtn.ghost{
+    background:transparent;
+    color:var(--sub);
+    border:1px solid var(--panel-border);
+    cursor:pointer;
+    display:inline-block;
+  }
+  .savebtn.ghost:hover{color:var(--ink);border-color:#3a4152;}
+  .datepill{
+    display:inline-flex;align-items:center;gap:10px;
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    padding:10px 20px;border-radius:999px;
+    font-weight:600;font-size:15px;
+    margin-bottom:22px;
+    cursor:pointer;
+    position:relative;
+    transition:border-color .12s ease;
+  }
+  .datepill:hover{border-color:var(--gold);}
+  .datepill input[type="date"]{
+    position:absolute;inset:0;
+    opacity:0;
+    width:100%;height:100%;
+    cursor:pointer;
+    border:none;
+  }
+  .savebar{
+    display:flex;align-items:center;justify-content:center;gap:12px;
+    margin-bottom:18px;
+  }
+  .savebtn{
+    background:var(--joker);
+    color:var(--joker-ink);
+    border:none;
+    font-weight:700;
+    font-size:13.5px;
+    padding:9px 18px;
+    border-radius:999px;
+    cursor:pointer;
+    transition:filter .12s ease, transform .08s ease;
+  }
+  .savebtn:hover{filter:brightness(1.08);}
+  .savebtn:active{transform:scale(0.97);}
+  .savebtn:disabled{
+    background:#2a2f3a;color:var(--sub);cursor:default;
+  }
+  .savestatus{
+    font-size:12.5px;color:var(--sub);min-width:120px;text-align:left;
+  }
+  .savestatus.dirty{color:var(--gold);}
+  .savestatus.saved{color:var(--joker);}
+  .legend{
+    display:flex;justify-content:center;gap:22px;
+    font-size:13px;color:var(--sub);margin-bottom:8px;flex-wrap:wrap;
+  }
+  .legend span{display:inline-flex;align-items:center;gap:7px;}
+  .dot{width:10px;height:10px;border-radius:3px;display:inline-block;}
+  .dot.am{background:var(--am);}
+  .dot.pm{background:var(--pm);}
+  .dot.night{background:var(--night);}
+  .dot.off{background:var(--off2);}
+  .dot.joker{background:var(--joker);}
+
+  .card{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:18px;
+    padding:24px 24px 8px;
+    margin-top:28px;
+  }
+  .grid-head{
+    display:grid;
+    grid-template-columns: 200px repeat(5, 1fr);
+    padding:0 0 14px;
+    font-weight:700;
+    font-size:14px;
+    color:var(--ink);
+  }
+  .grid-head div{text-align:center;}
+  .grid-head div:first-child{text-align:left;}
+
+  .group{
+    display:flex;
+    border-top:1px solid var(--panel-border);
+    padding:14px 0;
+    gap:14px;
+  }
+  .group:first-of-type{border-top:none;}
+  .glabel{
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    color:var(--gold);
+    font-weight:700;
+    font-size:12px;
+    letter-spacing:1px;
+    align-self:stretch;
+    display:flex;align-items:center;justify-content:center;
+    min-width:16px;
+  }
+  .rows{flex:1;display:flex;flex-direction:column;gap:8px;}
+  .row{
+    display:grid;
+    grid-template-columns: 184px repeat(5, 1fr);
+    align-items:center;
+    gap:8px;
+  }
+  .name{font-size:14.5px;font-weight:500;color:var(--ink);}
+  .cell{
+    border-radius:9px;
+    text-align:center;
+    padding:9px 6px;
+    font-size:13px;
+    font-weight:700;
+    cursor:pointer;
+    user-select:none;
+    border:1px solid transparent;
+    transition:transform .08s ease, filter .12s ease;
+  }
+  .cell:hover{filter:brightness(1.08);}
+  .cell:active{transform:scale(0.97);}
+  .cell.off{background:linear-gradient(180deg,var(--off2),var(--off));color:#ffdfe2;}
+  .cell.am{background:var(--am);color:var(--am-ink);}
+  .cell.pm{background:var(--pm);color:var(--pm-ink);}
+  .cell.night{background:var(--night);color:var(--night-ink);}
+
+  .joker-wrap{border-top:1px solid var(--panel-border);padding:16px 0 6px;}
+  .joker-title{
+    display:flex;align-items:center;gap:8px;
+    color:var(--joker);font-weight:700;font-size:12px;letter-spacing:1px;
+    margin-bottom:10px;text-transform:uppercase;
+  }
+  .joker-title .badge-dot{width:8px;height:8px;border-radius:50%;background:var(--joker);}
+  .jrow{
+    display:grid;
+    grid-template-columns: 184px repeat(5, 1fr);
+    align-items:center;
+    gap:8px;
+  }
+  .jname{font-size:14.5px;font-weight:700;color:var(--ink);}
+  .jtag{
+    font-size:10px;font-weight:700;color:var(--joker-ink);
+    background:var(--joker);border-radius:5px;
+    padding:2px 6px;margin-left:6px;letter-spacing:.5px;
+    vertical-align:middle;
+  }
+  .jcell{
+    border-radius:9px;
+    padding:8px 8px;
+    font-size:12.5px;
+    display:flex;flex-direction:column;gap:5px;
+    background:var(--joker-soft);
+    border:1px solid #1e4636;
+  }
+  .jcell.own{background:transparent;border:none;padding:0;}
+  .jcover-label{
+    color:var(--joker);font-weight:700;font-size:10.5px;
+    letter-spacing:.4px;text-transform:uppercase;
+    display:flex;align-items:center;gap:4px;
+  }
+  .jcover-label.none{
+    color:var(--sub);
+  }
+  select{
+    width:100%;
+    background:#0e1a15;
+    color:var(--ink);
+    border:1px solid #24503f;
+    border-radius:6px;
+    font-size:12px;
+    padding:5px 4px;
+    font-weight:600;
+  }
+  select:focus{outline:2px solid var(--joker);}
+  .footnote{
+    text-align:center;color:var(--sub);font-size:12.5px;
+    margin-top:22px;line-height:1.6;
+  }
+
+/* Mobile / tablet improvements */
+@media (max-width: 700px){
+  body{padding:18px 10px 40px;}
+  h1{font-size:27px;}
+  .sub{font-size:13px;margin-bottom:14px;}
+  .datepill{padding:9px 15px;margin-bottom:14px;font-size:14px;}
+  .savebar{gap:7px;flex-wrap:wrap;margin-bottom:14px;}
+  .savebtn{font-size:12px;padding:8px 13px;}
+  .savestatus{min-width:auto;font-size:11px;order:5;width:100%;text-align:center;}
+  .legend{gap:10px;font-size:11px;}
+  .card{padding:14px 8px 6px;border-radius:14px;margin-top:16px;overflow-x:auto;}
+  .grid-head{grid-template-columns:105px repeat(5, minmax(72px,1fr));min-width:465px;font-size:12px;padding-bottom:10px;}
+  .group{gap:8px;padding:10px 0;min-width:465px;}
+  .glabel{font-size:10px;min-width:12px;}
+  .row{grid-template-columns:97px repeat(5, minmax(72px,1fr));gap:5px;}
+  .name,.jname{font-size:12px;}
+  .cell{padding:9px 3px;font-size:11px;border-radius:8px;min-height:36px;display:flex;align-items:center;justify-content:center;}
+  .joker-wrap{min-width:465px;padding-top:12px;}
+  .jrow{grid-template-columns:97px repeat(5, minmax(72px,1fr));gap:5px;}
+  .jcell{padding:6px;border-radius:8px;}
+  select{font-size:11px;padding:5px 2px;}
+  .jtag{font-size:8px;padding:1px 4px;margin-left:2px;}
+  .footnote{font-size:11px;margin-top:15px;}
+}
+
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Schedule</h1>
+    <div class="sub">Monday to Friday</div>
+    <div class="datepill" id="datePill">
+      📅 <span id="dateText">Friday, 28 August 2026</span>
+      <input type="date" id="dateInput" value="2026-08-28">
+    </div>
+    <div class="savebar">
+      <button id="saveBtn" class="savebtn">Save changes</button>
+      <span id="saveStatus" class="savestatus"></span>
+      <button id="exportBtn" class="savebtn ghost" title="Download a backup file">Export</button>
+      <label class="savebtn ghost" style="margin:0;">
+        Import
+        <input type="file" id="importInput" accept="application/json" style="display:none;">
+      </label>
+    </div>
+    <div class="legend">
+      <span><i class="dot am"></i>AM</span>
+      <span><i class="dot pm"></i>PM</span>
+      <span><i class="dot night"></i>Overnight</span>
+      <span><i class="dot off"></i>Off</span>
+      <span><i class="dot joker"></i>Joker (Hassan H.)</span>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="grid-head">
+      <div></div>
+      <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div>
+    </div>
+    <div id="groups"></div>
+
+    <div class="joker-wrap">
+      <div class="joker-title"><span class="badge-dot"></span>Joker coverage</div>
+      <div class="jrow">
+        <div class="jname">Hassan H. <span class="jtag">JOKER</span></div>
+        <div id="jcells" style="display:contents;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footnote"><b>Phone:</b> swipe the schedule left/right if needed. Tap any shift to edit it.<br><br><div style="opacity:.85;">
+    Click any cell to cycle its status (Off → AM → PM → Overnight). Hassan automatically covers<br>
+    if anyone is off that day — pick who and which shift, or choose "No one." Click the date to change it.<br>
+    Changes are saved in this browser — press <b>Save changes</b>. If Save doesn't work, use <b>Export</b> to<br>
+    download a backup file, and <b>Import</b> to load it back in later.
+  </div>
+</div>
+
+<script>
+const DAYS = ["Mon","Tue","Wed","Thu","Fri"];
+const STATUSES = ["off","am","pm","night"];
+const LABELS = {off:"Off", am:"AM", pm:"PM", night:"Overnight"};
+
+const groups = [
+  {label:"Group 1", workers:[
+    {name:"Mostafa", sched:["off","off","off","off","am"]},
+    {name:"Kassem",  sched:["off","off","off","off","pm"]},
+    {name:"Rami",    sched:["off","off","off","off","night"]},
+  ]},
+  {label:"Group 2", workers:[
+    {name:"Jason",  sched:["off","off","off","off","am"]},
+    {name:"Moussa", sched:["off","off","off","off","pm"]},
+    {name:"M.H.",   sched:["off","off","off","off","night"]},
+  ]},
+  {label:"Group 3", workers:[
+    {name:"Hadi",      sched:["off","off","off","off","off"]},
+    {name:"Zolfikar",  sched:["off","off","off","off","am"]},
+    {name:"H.Ramadan", sched:["off","off","off","off","off"]},
+  ]},
+  {label:"Group 4", workers:[
+    {name:"Fidaa",   sched:["off","off","off","off","off"]},
+    {name:"Adel",    sched:["off","off","off","off","off"]},
+    {name:"Youssef", sched:["off","off","off","off","off"]},
+  ]},
+];
+
+// per-day joker state: { coveringName, coveringShift, ownShift }
+const jokerState = DAYS.map(()=>({coveringName:null, coveringShift:"am", ownShift:"off"}));
+
+const STORAGE_KEY = "schedule-state-v1";
+let dirty = false;
+let saving = false;
+
+const saveBtn = document.getElementById("saveBtn");
+const saveStatus = document.getElementById("saveStatus");
+
+function updateSaveUI(){
+  if(saving){
+    saveBtn.disabled = true;
+    saveStatus.textContent = "Saving…";
+    saveStatus.className = "savestatus dirty";
+  } else if(dirty){
+    saveBtn.disabled = false;
+    saveStatus.textContent = "Unsaved changes";
+    saveStatus.className = "savestatus dirty";
+  } else {
+    saveBtn.disabled = true;
+    saveStatus.textContent = window.storage ? "All changes saved" : "Saved to this browser";
+    saveStatus.className = "savestatus saved";
+  }
+}
+
+function markDirty(){
+  dirty = true;
+  updateSaveUI();
+}
+
+function serializeState(){
+  return JSON.stringify({
+    date: dateInput.value,
+    groups: groups.map(g => ({label: g.label, workers: g.workers.map(w => ({name:w.name, sched:w.sched}))})),
+    jokerState
+  });
+}
+
+async function saveState(){
+  saving = true;
+  updateSaveUI();
+  const payload = serializeState();
+  try{
+    if(window.storage){
+      await window.storage.set(STORAGE_KEY, payload, false);
+    } else {
+      localStorage.setItem(STORAGE_KEY, payload);
+    }
+    dirty = false;
+  } catch(err){
+    console.error("Save failed:", err);
+    saveStatus.textContent = "Save failed: " + (err && err.message ? err.message : "unknown error");
+    saveStatus.className = "savestatus dirty";
+    saving = false;
+    saveBtn.disabled = false;
+    return;
+  }
+  saving = false;
+  updateSaveUI();
+}
+
+function applyLoadedData(data){
+  if(!data) return;
+  if(data.date){
+    dateInput.value = data.date;
+    updateDateText();
+  }
+  if(Array.isArray(data.groups)){
+    data.groups.forEach((savedGroup, gi)=>{
+      savedGroup.workers.forEach((savedWorker, wi)=>{
+        if(groups[gi] && groups[gi].workers[wi]){
+          groups[gi].workers[wi].sched = savedWorker.sched;
+        }
+      });
+    });
+  }
+  if(Array.isArray(data.jokerState)){
+    data.jokerState.forEach((s, i)=>{
+      if(jokerState[i]) jokerState[i] = s;
+    });
+  }
+}
+
+async function loadState(){
+  try{
+    if(window.storage){
+      const result = await window.storage.get(STORAGE_KEY, false);
+      if(result && result.value){
+        applyLoadedData(JSON.parse(result.value));
+      }
+    } else {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        applyLoadedData(JSON.parse(raw));
+      }
+    }
+  } catch(err){
+    // no saved state yet — that's fine, start fresh
+  }
+}
+
+saveBtn.onclick = saveState;
+
+document.getElementById("exportBtn").onclick = ()=>{
+  const blob = new Blob([serializeState()], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "schedule-backup.json";
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+document.getElementById("importInput").onchange = (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      applyLoadedData(JSON.parse(reader.result));
+      markDirty();
+      renderAll();
+    } catch(err){
+      alert("Couldn't read that file — make sure it's a schedule backup exported from this page.");
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = "";
+};
+
+const dateInput = document.getElementById("dateInput");
+const dateText = document.getElementById("dateText");
+function updateDateText(){
+  const [y,m,d] = dateInput.value.split("-").map(Number);
+  const dt = new Date(y, m-1, d);
+  dateText.textContent = dt.toLocaleDateString(undefined, {weekday:"long", day:"numeric", month:"long", year:"numeric"});
+}
+dateInput.onchange = ()=>{
+  updateDateText();
+  markDirty();
+};
+document.getElementById("datePill").addEventListener("click", ()=>{
+  if(typeof dateInput.showPicker === "function"){
+    try{ dateInput.showPicker(); return; } catch(err){ /* fall through */ }
+  }
+  dateInput.focus();
+  dateInput.click();
+});
+updateDateText();
+
+function allWorkers(){
+  return groups.flatMap(g => g.workers);
+}
+
+function offWorkersForDay(dayIdx){
+  return allWorkers().filter(w => w.sched[dayIdx] === "off").map(w=>w.name);
+}
+
+function cycle(status){
+  const i = STATUSES.indexOf(status);
+  return STATUSES[(i+1) % STATUSES.length];
+}
+
+function renderGroups(){
+  const root = document.getElementById("groups");
+  root.innerHTML = "";
+  groups.forEach(g=>{
+    const gEl = document.createElement("div");
+    gEl.className = "group";
+    const gl = document.createElement("div");
+    gl.className = "glabel";
+    gl.textContent = g.label;
+    gEl.appendChild(gl);
+
+    const rows = document.createElement("div");
+    rows.className = "rows";
+    g.workers.forEach(w=>{
+      const row = document.createElement("div");
+      row.className = "row";
+      const nameEl = document.createElement("div");
+      nameEl.className = "name";
+      nameEl.textContent = w.name;
+      row.appendChild(nameEl);
+
+      w.sched.forEach((st, dayIdx)=>{
+        const cell = document.createElement("div");
+        cell.className = "cell " + st;
+        cell.textContent = LABELS[st];
+        cell.onclick = ()=>{
+          w.sched[dayIdx] = cycle(st);
+          markDirty();
+          renderAll();
+        };
+        row.appendChild(cell);
+      });
+      rows.appendChild(row);
+    });
+    gEl.appendChild(rows);
+    root.appendChild(gEl);
+  });
+}
+
+function renderJoker(){
+  const root = document.getElementById("jcells");
+  root.innerHTML = "";
+  DAYS.forEach((day, dayIdx)=>{
+    const offNames = offWorkersForDay(dayIdx);
+    const state = jokerState[dayIdx];
+
+    const wrap = document.createElement("div");
+
+    if(offNames.length === 0){
+      // nobody off -> Hassan has his own shift, clickable like everyone else
+      const box = document.createElement("div");
+      box.className = "jcell";
+
+      const label = document.createElement("div");
+      label.className = "jcover-label none";
+      label.textContent = "Not covering";
+      box.appendChild(label);
+
+      const cell = document.createElement("div");
+      cell.className = "cell " + state.ownShift;
+      cell.textContent = LABELS[state.ownShift];
+      cell.onclick = ()=>{
+        state.ownShift = cycle(state.ownShift);
+        markDirty();
+        renderJoker();
+      };
+      box.appendChild(cell);
+      wrap.appendChild(box);
+    } else {
+      // someone off -> Hassan can cover, or explicitly cover no one
+      if(state.coveringName !== null && !offNames.includes(state.coveringName)){
+        state.coveringName = offNames[0];
+      }
+      const box = document.createElement("div");
+      box.className = "jcell";
+
+      const isCovering = state.coveringName !== null;
+
+      const label = document.createElement("div");
+      label.className = "jcover-label" + (isCovering ? "" : " none");
+      label.textContent = isCovering ? "Covering" : "Not covering";
+      box.appendChild(label);
+
+      const nameSel = document.createElement("select");
+      const noneOpt = document.createElement("option");
+      noneOpt.value = "";
+      noneOpt.textContent = "No one";
+      if(!isCovering) noneOpt.selected = true;
+      nameSel.appendChild(noneOpt);
+      offNames.forEach(n=>{
+        const opt = document.createElement("option");
+        opt.value = n; opt.textContent = n;
+        if(n === state.coveringName) opt.selected = true;
+        nameSel.appendChild(opt);
+      });
+      nameSel.onchange = (e)=>{
+        state.coveringName = e.target.value === "" ? null : e.target.value;
+        markDirty();
+        renderJoker();
+      };
+      box.appendChild(nameSel);
+
+      if(isCovering){
+        const shiftSel = document.createElement("select");
+        ["am","pm","night"].forEach(s=>{
+          const opt = document.createElement("option");
+          opt.value = s; opt.textContent = LABELS[s];
+          if(s === state.coveringShift) opt.selected = true;
+          shiftSel.appendChild(opt);
+        });
+        shiftSel.onchange = (e)=>{ state.coveringShift = e.target.value; markDirty(); };
+        box.appendChild(shiftSel);
+      }
+
+      wrap.appendChild(box);
+    }
+    root.appendChild(wrap);
+  });
+}
+
+function renderAll(){
+  renderGroups();
+  renderJoker();
+}
+
+(async function init(){
+  await loadState();
+  renderAll();
+  updateSaveUI();
+})();
+</script>
+</body>
+</html>
