@@ -239,12 +239,40 @@
 .readonly-mode .cover-select{pointer-events:none}.group.joker{border-top:2px solid var(--gold)}
 @media(max-width:700px){.joker-day .cell{font-size:10px}.name{overflow-wrap:anywhere}}
 .cell.ten6,.dot.ten6{background:#bce5cb;color:#153b25}
+
+.capture-tools{text-align:center;margin:12px 0}.capture-help{display:block;margin-top:6px;color:var(--sub);font-size:11px}
+.cover-caption,.short-shift{display:none}
+@media(max-width:700px){
+ body{padding:14px 8px 24px}.wrap{width:100%;max-width:100%}header{margin-bottom:12px}
+ h1{font-size:25px;margin:0 0 6px}.sub{margin:0 0 10px;font-size:12px}
+ .datepill{max-width:100%;font-size:12px;padding:8px 10px;margin-bottom:10px}
+ .card{padding:12px 6px;margin-top:12px;overflow:visible}
+ .grid-head{grid-template-columns:82px repeat(5,minmax(0,1fr));gap:3px;min-width:0;font-size:11px;padding-bottom:8px}
+ .group{display:block;min-width:0;padding:8px 0;gap:0}
+ .glabel{writing-mode:initial;transform:none;justify-content:flex-start;font-size:10px;letter-spacing:.8px;margin:0 0 6px;min-width:0}
+ .rows{gap:5px;min-width:0}.row{grid-template-columns:82px repeat(5,minmax(0,1fr));gap:3px;min-width:0}
+ .name{font-size:11px;line-height:1.2}.cell{font-size:10px;padding:8px 1px;min-height:32px;min-width:0;white-space:nowrap}
+ .joker-day .cell{font-size:10px}.joker-day{gap:4px}.cover-select{font-size:9px;padding:4px 0}
+ .long-shift{display:none}.short-shift{display:inline}.legend{gap:9px;font-size:10px}.dot{width:8px;height:8px}
+}
+body.screenshot-mode{padding:10px 8px;background:var(--bg)}
+.screenshot-mode .wrap{max-width:850px}.screenshot-mode header{margin-bottom:8px}
+.screenshot-mode h1{margin:0 0 4px;font-size:23px;cursor:pointer}
+.screenshot-mode .sub{margin:0 0 7px;font-size:11px}
+.screenshot-mode .datepill{margin-bottom:8px;padding:5px 10px;pointer-events:none}
+.screenshot-mode .savebar,.screenshot-mode .capture-tools,.screenshot-mode .footnote{display:none!important}
+.screenshot-mode .card{margin-top:8px;padding-top:10px;padding-bottom:8px}
+.screenshot-mode .cell{pointer-events:none;min-height:27px;padding-top:6px;padding-bottom:6px}
+.screenshot-mode .group{padding-top:7px;padding-bottom:7px}.screenshot-mode .rows{gap:4px}
+.screenshot-mode .cover-select{display:none}.screenshot-mode .cover-caption{display:block;color:var(--gold);font-size:9px;line-height:1.2;text-align:center;overflow-wrap:anywhere}
+@media(max-width:360px){.row,.grid-head{grid-template-columns:72px repeat(5,minmax(0,1fr))}.name{font-size:10px}.legend{gap:6px;font-size:9px}.datepill{font-size:11px}}
+
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>Schedule</h1>
+    <h1 id="scheduleTitle">Schedule</h1>
     <div class="sub">Monday to Friday</div>
     <div class="datepill" id="datePill">
       📅 <span id="dateText">Loading week…</span>
@@ -269,6 +297,7 @@
     </div>
   </header>
 
+  <div class="capture-tools"><button id="screenshotBtn" class="savebtn ghost">Screenshot view</button><span class="capture-help">Compact view for sharing. Tap the Schedule title to return.</span></div>
   <div class="card">
     <div class="grid-head">
       <div></div>
@@ -277,7 +306,7 @@
     <div id="groups"></div>
   </div>
 
-  <div class="footnote" id="footnoteText"><b>Phone:</b> swipe the schedule left/right if needed. Tap any shift to edit it.<br><br><div style="opacity:.85;">
+  <div class="footnote" id="footnoteText"><b>Phone:</b> tap a shift to edit. Use Screenshot view, then take your phone screenshot. Tap the Schedule title to return.<br><br><div style="opacity:.85;">
     Click any cell to cycle its status (Off → AM → PM → Overnight). Click the date to change it.<br>For Hassan Hashem, choose a cover shift and worker, or select 10–6 when nobody is off (Off → AM → PM → Overnight → 10–6).<br>
     Press <b>Save changes</b> to publish your edits across devices. If Save doesn't work, use <b>Export</b> to<br>
     download a backup file, and <b>Import</b> to load it back in later.
@@ -427,7 +456,10 @@ function renderGroups(){
         const cell = document.createElement("button");
         cell.type="button";cell.disabled=isReadOnly||saving;cell.setAttribute("aria-label",`${w.name}, ${DAYS[dayIdx]}: ${LABELS[st]}`);
         cell.className = "cell " + st;
-        cell.textContent = LABELS[st];
+        if(st==='night'){
+          const full=document.createElement('span');full.className='long-shift';full.textContent='Overnight';
+          const short=document.createElement('span');short.className='short-shift';short.textContent='Night';cell.appendChild(full);cell.appendChild(short);
+        }else cell.textContent = LABELS[st];
         cell.onclick = ()=>{
           if(isReadOnly||saving) return;
           w.sched[dayIdx] = cycle(st, Boolean(w.covers));
@@ -441,7 +473,8 @@ function renderGroups(){
         const none=document.createElement('option');none.value='';none.textContent='Covering…';select.appendChild(none);
         workerNames.forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;select.appendChild(o);});
         select.value=w.covers[dayIdx];select.disabled=isReadOnly||saving||['off','ten6'].includes(st);select.hidden=['off','ten6'].includes(st);
-        select.onchange=()=>{if(isReadOnly||saving)return;w.covers[dayIdx]=select.value;markDirty();};day.appendChild(select);row.appendChild(day);
+        const caption=document.createElement('span');caption.className='cover-caption';caption.textContent=st==='off'||st==='ten6'?'':w.covers[dayIdx];
+        select.onchange=()=>{if(isReadOnly||saving)return;w.covers[dayIdx]=select.value;caption.textContent=select.value;markDirty();};day.appendChild(select);day.appendChild(caption);row.appendChild(day);
         }else row.appendChild(cell);
       });
       rows.appendChild(row);
@@ -455,6 +488,16 @@ function renderAll(){
   renderGroups();
 }
 
+function screenshotView(enabled){
+ document.body.classList.toggle('screenshot-mode',enabled);
+ const title=document.getElementById('scheduleTitle');
+ if(enabled){title.setAttribute('role','button');title.setAttribute('tabindex','0');title.setAttribute('aria-label','Return to editing schedule');window.scrollTo(0,0);}
+ else{title.removeAttribute('role');title.removeAttribute('tabindex');title.removeAttribute('aria-label');}
+}
+document.getElementById('screenshotBtn').onclick=()=>{if(saving)return;if(dirty&&!confirm('This screenshot will include unsaved edits. Continue?'))return;screenshotView(true);};
+document.getElementById('scheduleTitle').onclick=()=>screenshotView(false);
+document.getElementById('scheduleTitle').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();screenshotView(false);}};
+window.addEventListener('keydown',e=>{if(e.key==='Escape')screenshotView(false);});
 // App Initialization
 (function init(){
   updateSaveUI();
