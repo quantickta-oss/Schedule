@@ -238,6 +238,7 @@
 .cover-select{width:100%;min-width:0;background:var(--panel);color:var(--ink);border:1px solid var(--panel-border);border-radius:6px;padding:6px 2px;font-size:11px}
 .readonly-mode .cover-select{pointer-events:none}.group.joker{border-top:2px solid var(--gold)}
 @media(max-width:700px){.joker-day .cell{font-size:10px}.name{overflow-wrap:anywhere}}
+.cell.ten6,.dot.ten6{background:#bce5cb;color:#153b25}
 </style>
 </head>
 <body>
@@ -264,6 +265,7 @@
       <span><i class="dot pm"></i>PM</span>
       <span><i class="dot night"></i>Overnight</span>
       <span><i class="dot off"></i>Off</span>
+      <span><i class="dot ten6"></i>10–6 · Joker</span>
     </div>
   </header>
 
@@ -276,7 +278,7 @@
   </div>
 
   <div class="footnote" id="footnoteText"><b>Phone:</b> swipe the schedule left/right if needed. Tap any shift to edit it.<br><br><div style="opacity:.85;">
-    Click any cell to cycle its status (Off → AM → PM → Overnight). Click the date to change it.<br>For Hassan Hashem, choose his shift and the worker he is covering that day.<br>
+    Click any cell to cycle its status (Off → AM → PM → Overnight). Click the date to change it.<br>For Hassan Hashem, choose a cover shift and worker, or select 10–6 when nobody is off (Off → AM → PM → Overnight → 10–6).<br>
     Press <b>Save changes</b> to publish your edits across devices. If Save doesn't work, use <b>Export</b> to<br>
     download a backup file, and <b>Import</b> to load it back in later.
   </div>
@@ -285,7 +287,8 @@
 <script>
 const DAYS = ["Mon","Tue","Wed","Thu","Fri"];
 const STATUSES = ["off","am","pm","night"];
-const LABELS = {off:"Off", am:"AM", pm:"PM", night:"Overnight"};
+const JOKER_STATUSES = [...STATUSES,"ten6"];
+const LABELS = {ten6:"10–6", off:"Off", am:"AM", pm:"PM", night:"Overnight"};
 
 const groups = [
  {label:"Group 1",workers:["Kassem","Zolfikar","Ramy"].map(name=>({name,sched:Array(5).fill('off')}))},
@@ -311,7 +314,7 @@ function serializeState(){return {version:2,date:dateInput.value,groups:groups.m
 function validateData(data){
  if(!data||!Array.isArray(data.groups)||!data.groups.length||typeof data.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(data.date)||isNaN(Date.parse(data.date))||new Date(data.date).toISOString().slice(0,10)!==data.date)throw Error('Invalid schedule backup or date.');
  const seen=new Set();
- for(const g of data.groups){if(!Array.isArray(g.workers))throw Error('Invalid worker list.');for(const w of g.workers){if(typeof w.name!=='string'||!Array.isArray(w.sched)||w.sched.length!==5||w.sched.some(st=>!STATUSES.includes(st)))throw Error('Invalid worker schedule.');const name=w.name==='Hassan H.'?'Hassan Hashem':w.name;if(seen.has(name))throw Error('Duplicate worker in schedule.');seen.add(name);if(w.covers&&(!Array.isArray(w.covers)||w.covers.length!==5||w.covers.some(n=>n!==''&&!workerNames.includes(n))))throw Error('Invalid joker cover assignment.');}}
+ for(const g of data.groups){if(!Array.isArray(g.workers))throw Error('Invalid worker list.');for(const w of g.workers){if(typeof w.name!=='string'||!Array.isArray(w.sched)||w.sched.length!==5||w.sched.some(st=>!(w.name==='Hassan Hashem'||w.name==='Hassan H.'?JOKER_STATUSES:STATUSES).includes(st)))throw Error('Invalid worker schedule.');const name=w.name==='Hassan H.'?'Hassan Hashem':w.name;if(seen.has(name))throw Error('Duplicate worker in schedule.');seen.add(name);if(w.covers&&(!Array.isArray(w.covers)||w.covers.length!==5||w.covers.some(n=>n!==''&&!workerNames.includes(n))))throw Error('Invalid joker cover assignment.');}}
 }
 function applyLoadedData(data){
  if(!data)return;validateData(data);
@@ -393,9 +396,10 @@ document.getElementById("datePill").addEventListener("click", ()=>{
 if(!dateInput.value){dateInput.value=new Date().toISOString().slice(0,10);}
 updateDateText();
 
-function cycle(status){
-  const i = STATUSES.indexOf(status);
-  return STATUSES[(i+1) % STATUSES.length];
+function cycle(status, joker=false){
+  const options=joker?JOKER_STATUSES:STATUSES;
+  const i = options.indexOf(status);
+  return options[(i+1) % options.length];
 }
 
 function renderGroups(){
@@ -426,8 +430,8 @@ function renderGroups(){
         cell.textContent = LABELS[st];
         cell.onclick = ()=>{
           if(isReadOnly||saving) return;
-          w.sched[dayIdx] = cycle(st);
-          if(w.covers && w.sched[dayIdx]==='off')w.covers[dayIdx]='';
+          w.sched[dayIdx] = cycle(st, Boolean(w.covers));
+          if(w.covers && ['off','ten6'].includes(w.sched[dayIdx]))w.covers[dayIdx]='';
           markDirty();
           renderAll();
         };
@@ -436,7 +440,7 @@ function renderGroups(){
         const select=document.createElement('select');select.className='cover-select';select.setAttribute('aria-label',`Hassan Hashem covers on ${DAYS[dayIdx]}`);
         const none=document.createElement('option');none.value='';none.textContent='Covering…';select.appendChild(none);
         workerNames.forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;select.appendChild(o);});
-        select.value=w.covers[dayIdx];select.disabled=isReadOnly||saving||st==='off';select.hidden=st==='off';
+        select.value=w.covers[dayIdx];select.disabled=isReadOnly||saving||['off','ten6'].includes(st);select.hidden=['off','ten6'].includes(st);
         select.onchange=()=>{if(isReadOnly||saving)return;w.covers[dayIdx]=select.value;markDirty();};day.appendChild(select);row.appendChild(day);
         }else row.appendChild(cell);
       });
