@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Schedule</title>
 
   <!-- Firebase Core SDK -->
@@ -21,8 +22,8 @@
     };
 
     // Initialize Firebase
-    firebase.initializeApp(firebaseConfig);
-    const database = firebase.database();
+    let database = null;
+    try { if (!firebase.apps.length) firebase.initializeApp(firebaseConfig); database = firebase.database(); } catch (err) { console.error("Firebase unavailable", err); }
 
     // Check read-only state immediately before rendering
     const urlParams = new URLSearchParams(window.location.search);
@@ -231,6 +232,12 @@
   .cell{padding:9px 3px;font-size:11px;border-radius:8px;min-height:36px;display:flex;align-items:center;justify-content:center;}
   .footnote{font-size:11px;margin-top:15px;}
 }
+[hidden]{display:none!important}
+.cell{font-family:inherit;width:100%}.cell:focus-visible,select:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.cell:disabled{cursor:default}.joker-day{min-width:0;display:flex;flex-direction:column;gap:6px}
+.cover-select{width:100%;min-width:0;background:var(--panel);color:var(--ink);border:1px solid var(--panel-border);border-radius:6px;padding:6px 2px;font-size:11px}
+.readonly-mode .cover-select{pointer-events:none}.group.joker{border-top:2px solid var(--gold)}
+@media(max-width:700px){.joker-day .cell{font-size:10px}.name{overflow-wrap:anywhere}}
 </style>
 </head>
 <body>
@@ -239,12 +246,13 @@
     <h1>Schedule</h1>
     <div class="sub">Monday to Friday</div>
     <div class="datepill" id="datePill">
-      📅 <span id="dateText">Monday 24 August to Friday 28 August 2026</span>
-      <input type="date" id="dateInput" value="2026-08-24">
+      📅 <span id="dateText">Loading week…</span>
+      <input type="date" id="dateInput" value="">
     </div>
     <div class="savebar">
       <button id="saveBtn" class="savebtn">Save changes</button>
-      <span id="saveStatus" class="savestatus"></span>
+      <span id="saveStatus" class="savestatus" role="status" aria-live="polite"></span>
+      <button id="reloadBtn" class="savebtn ghost" hidden>Load latest saved</button>
       <button id="exportBtn" class="savebtn ghost" title="Download a backup file">Export</button>
       <label class="savebtn ghost" style="margin:0;">
         Import
@@ -268,8 +276,8 @@
   </div>
 
   <div class="footnote" id="footnoteText"><b>Phone:</b> swipe the schedule left/right if needed. Tap any shift to edit it.<br><br><div style="opacity:.85;">
-    Click any cell to cycle its status (Off → AM → PM → Overnight). Click the date to change it.<br>
-    Changes are synced live — press <b>Save changes</b>. If Save doesn't work, use <b>Export</b> to<br>
+    Click any cell to cycle its status (Off → AM → PM → Overnight). Click the date to change it.<br>For Hassan Hashem, choose his shift and the worker he is covering that day.<br>
+    Press <b>Save changes</b> to publish your edits across devices. If Save doesn't work, use <b>Export</b> to<br>
     download a backup file, and <b>Import</b> to load it back in later.
   </div>
 </div>
@@ -280,142 +288,63 @@ const STATUSES = ["off","am","pm","night"];
 const LABELS = {off:"Off", am:"AM", pm:"PM", night:"Overnight"};
 
 const groups = [
-  {label:"Group 1", workers:[
-    {name:"Kassem",  sched:["off","off","off","off","off"]},
-    {name:"Ramy",    sched:["off","off","off","off","off"]},
-    {name:"Mostafa", sched:["off","off","off","off","off"]},
-  ]},
-  {label:"Group 2", workers:[
-    {name:"Moussa",   sched:["off","off","off","off","off"]},
-    {name:"Zolfikar", sched:["off","off","off","off","off"]},
-    {name:"Jason",    sched:["off","off","off","off","off"]},
-  ]},
-  {label:"Group 3", workers:[
-    {name:"Ramadan", sched:["off","off","off","off","off"]},
-    {name:"Hadi",    sched:["off","off","off","off","off"]},
-    {name:"Adel",    sched:["off","off","off","off","off"]},
-  ]},
-  {label:"Group 4", workers:[
-    {name:"Youssef",  sched:["off","off","off","off","off"]},
-    {name:"Fidaa",    sched:["off","off","off","off","off"]},
-    {name:"Hassan H.",sched:["off","off","off","off","off"]},
-  ]},
+ {label:"Group 1",workers:["Kassem","Zolfikar","Ramy"].map(name=>({name,sched:Array(5).fill('off')}))},
+ {label:"Group 2",workers:["Hadi","Jason","Moussa"].map(name=>({name,sched:Array(5).fill('off')}))},
+ {label:"Group 3",workers:["Fidaa","Mostafa","Youssef"].map(name=>({name,sched:Array(5).fill('off')}))},
+ {label:"Joker",workers:[{name:"Hassan Hashem",sched:Array(5).fill('off'),covers:Array(5).fill('')}]}
 ];
-
-let dirty = false;
-let saving = false;
-
-const saveBtn = document.getElementById("saveBtn");
-const saveStatus = document.getElementById("saveStatus");
-
+const workerNames=groups.slice(0,3).flatMap(g=>g.workers.map(w=>w.name));
+let dirty=false, saving=false, loaded=false, lastError='', baseData=null, pendingData=null, hasPending=false;
+const saveBtn=document.getElementById('saveBtn'), saveStatus=document.getElementById('saveStatus'), reloadBtn=document.getElementById('reloadBtn');
+const clone=value=>value===null?null:JSON.parse(JSON.stringify(value));
+function canonical(v){if(v===null||typeof v!=='object')return JSON.stringify(v);if(Array.isArray(v))return '['+v.map(canonical).join(',')+']';return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}';}
 function updateSaveUI(){
-  if(isReadOnly) return;
-  if(saving){
-    saveBtn.disabled = true;
-    saveStatus.textContent = "Saving to cloud…";
-    saveStatus.className = "savestatus dirty";
-  } else if(dirty){
-    saveBtn.disabled = false;
-    saveStatus.textContent = "Unsaved changes";
-    saveStatus.className = "savestatus dirty";
-  } else {
-    saveBtn.disabled = true;
-    saveStatus.textContent = "Synced across devices";
-    saveStatus.className = "savestatus saved";
-  }
+ saveBtn.disabled=isReadOnly||saving||!loaded||hasPending;
+ reloadBtn.hidden=!hasPending||isReadOnly;reloadBtn.disabled=saving;
+ dateInput.disabled=isReadOnly||saving;document.getElementById('importInput').disabled=isReadOnly||saving;
+ if(isReadOnly)return;
+ saveStatus.textContent=saving?'Saving to cloud…':lastError?lastError:hasPending?'A newer schedule is available. Export your edits or load the latest saved version.':!loaded?'Loading saved schedule…':dirty?'Unsaved changes':'Saved schedule loaded';
+ saveStatus.className='savestatus '+(lastError||hasPending||dirty?'dirty':'saved');
 }
-
-function markDirty(){
-  if(isReadOnly) return;
-  dirty = true;
-  updateSaveUI();
+function markDirty(){if(isReadOnly||saving)return;dirty=true;lastError='';updateSaveUI();}
+function serializeState(){return {version:2,date:dateInput.value,groups:groups.map(g=>({label:g.label,workers:g.workers.map(w=>({name:w.name,sched:[...w.sched],...(w.covers?{covers:[...w.covers]}:{})}))}))};}
+function validateData(data){
+ if(!data||!Array.isArray(data.groups)||!data.groups.length||typeof data.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(data.date)||isNaN(Date.parse(data.date))||new Date(data.date).toISOString().slice(0,10)!==data.date)throw Error('Invalid schedule backup or date.');
+ const seen=new Set();
+ for(const g of data.groups){if(!Array.isArray(g.workers))throw Error('Invalid worker list.');for(const w of g.workers){if(typeof w.name!=='string'||!Array.isArray(w.sched)||w.sched.length!==5||w.sched.some(st=>!STATUSES.includes(st)))throw Error('Invalid worker schedule.');const name=w.name==='Hassan H.'?'Hassan Hashem':w.name;if(seen.has(name))throw Error('Duplicate worker in schedule.');seen.add(name);if(w.covers&&(!Array.isArray(w.covers)||w.covers.length!==5||w.covers.some(n=>n!==''&&!workerNames.includes(n))))throw Error('Invalid joker cover assignment.');}}
 }
-
-function serializeState(){
-  return {
-    date: dateInput.value,
-    groups: groups.map(g => ({label: g.label, workers: g.workers.map(w => ({name:w.name, sched:w.sched}))}))
-  };
-}
-
-// Save to Firebase Database
-async function saveState(){
-  if(isReadOnly) return;
-  saving = true;
-  updateSaveUI();
-  const payload = serializeState();
-  try{
-    await database.ref('scheduleData').set(payload);
-    dirty = false;
-  } catch(err){
-    console.error("Save failed:", err);
-    saveStatus.textContent = "Save failed: " + (err && err.message ? err.message : "unknown error");
-    saveStatus.className = "savestatus dirty";
-  }
-  saving = false;
-  updateSaveUI();
-}
-
 function applyLoadedData(data){
-  if(!data) return;
-  if(data.date){
-    dateInput.value = data.date;
-    updateDateText();
-  }
-  if(Array.isArray(data.groups)){
-    data.groups.forEach((savedGroup, gi)=>{
-      if(savedGroup.workers && Array.isArray(savedGroup.workers)){
-        savedGroup.workers.forEach((savedWorker, wi)=>{
-          if(groups[gi] && groups[gi].workers[wi]){
-            groups[gi].workers[wi].sched = savedWorker.sched;
-          }
-        });
-      }
-    });
-  }
+ if(!data)return;validateData(data);
+ const byName=new Map(data.groups.flatMap(g=>g.workers).map(w=>[w.name==='Hassan H.'?'Hassan Hashem':w.name,w]));
+ dateInput.value=data.date;updateDateText();
+ for(const g of groups)for(const w of g.workers){const saved=byName.get(w.name);w.sched=saved?[...saved.sched]:Array(5).fill('off');if(w.covers)w.covers=saved?.covers?[...saved.covers]:Array(5).fill('');}
 }
-
-// Real-time Firebase Listener
+async function saveState(){
+ if(isReadOnly||saving||!loaded||hasPending)return;
+ if(!database){lastError='Cloud unavailable. Export a backup and reload when connected.';updateSaveUI();return;}
+ const payload=serializeState();try{validateData(payload);}catch(e){lastError=e.message;updateSaveUI();return;}
+ saving=true;lastError='';updateSaveUI();renderAll();
+ try{
+ const result=await database.ref('scheduleData').transaction(current=>canonical(current)===canonical(baseData)?payload:undefined,undefined,false);
+ if(!result.committed){pendingData=clone(result.snapshot.val());hasPending=true;lastError='The saved schedule changed. Export your edits, then load the latest saved version.';}
+ else {baseData=clone(result.snapshot.val());dirty=false;hasPending=false;pendingData=null;}
+ }catch(e){lastError='Save failed: '+e.message;}
+ saving=false;updateSaveUI();renderAll();
+}
+function receiveData(data){
+ if(saving)return;
+ if(dirty){if(canonical(data)!==canonical(baseData)){pendingData=clone(data);hasPending=true;updateSaveUI();}return;}
+ try{if(data)applyLoadedData(data);baseData=clone(data);loaded=true;lastError='';hasPending=false;renderAll();updateSaveUI();}catch(e){lastError='Cannot load schedule: '+e.message;updateSaveUI();}
+}
 function listenForRealtimeUpdates(){
-  database.ref('scheduleData').on('value', (snapshot) => {
-    const data = snapshot.val();
-    if(data){
-      applyLoadedData(data);
-      renderAll();
-      dirty = false;
-      updateSaveUI();
-    }
-  });
+ if(!database){lastError='Cloud unavailable. Export can still save a backup.';updateSaveUI();return;}
+ database.ref('scheduleData').on('value',snap=>receiveData(snap.val()),err=>{lastError='Cannot read saved schedule: '+err.message;loaded=false;updateSaveUI();});
 }
-
-saveBtn.onclick = saveState;
-
-document.getElementById("exportBtn").onclick = ()=>{
-  const blob = new Blob([JSON.stringify(serializeState())], {type:"application/json"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "schedule-backup.json";
-  a.click();
-  URL.revokeObjectURL(url);
-};
-
-document.getElementById("importInput").onchange = (e)=>{
-  const file = e.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = ()=>{
-    try{
-      applyLoadedData(JSON.parse(reader.result));
-      markDirty();
-      renderAll();
-    } catch(err){
-      alert("Couldn't read that file — make sure it's a schedule backup exported from this page.");
-    }
-  };
-  reader.readAsText(file);
-  e.target.value = "";
-};
+reloadBtn.onclick=()=>{if(isReadOnly||saving||!hasPending)return;if(dirty&&!confirm('Discard your unsaved edits and load the latest saved schedule? Export first if you need to keep your edits.'))return;dirty=false;receiveData(pendingData);};
+saveBtn.onclick=saveState;
+document.getElementById('exportBtn').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(serializeState(),null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='schedule-'+dateInput.value+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+document.getElementById('importInput').onchange=async e=>{const file=e.target.files[0];if(!file||isReadOnly||saving)return;try{const data=JSON.parse(await file.text());validateData(data);if(dirty&&!confirm('Replace your unsaved edits with this backup?'))return;applyLoadedData(data);markDirty();renderAll();}catch(err){lastError='Import failed: '+err.message;updateSaveUI();}finally{e.target.value='';}};
+window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
 
 const dateInput = document.getElementById("dateInput");
 const dateText = document.getElementById("dateText");
@@ -461,6 +390,7 @@ document.getElementById("datePill").addEventListener("click", ()=>{
   dateInput.focus();
   dateInput.click();
 });
+if(!dateInput.value){dateInput.value=new Date().toISOString().slice(0,10);}
 updateDateText();
 
 function cycle(status){
@@ -473,7 +403,7 @@ function renderGroups(){
   root.innerHTML = "";
   groups.forEach(g=>{
     const gEl = document.createElement("div");
-    gEl.className = "group";
+    gEl.className = "group"+(g.label==='Joker'?' joker':'');
     const gl = document.createElement("div");
     gl.className = "glabel";
     gl.textContent = g.label;
@@ -490,16 +420,25 @@ function renderGroups(){
       row.appendChild(nameEl);
 
       w.sched.forEach((st, dayIdx)=>{
-        const cell = document.createElement("div");
+        const cell = document.createElement("button");
+        cell.type="button";cell.disabled=isReadOnly||saving;cell.setAttribute("aria-label",`${w.name}, ${DAYS[dayIdx]}: ${LABELS[st]}`);
         cell.className = "cell " + st;
         cell.textContent = LABELS[st];
         cell.onclick = ()=>{
-          if(isReadOnly) return;
+          if(isReadOnly||saving) return;
           w.sched[dayIdx] = cycle(st);
+          if(w.covers && w.sched[dayIdx]==='off')w.covers[dayIdx]='';
           markDirty();
           renderAll();
         };
-        row.appendChild(cell);
+        if(w.covers){
+        const day=document.createElement('div');day.className='joker-day';day.appendChild(cell);
+        const select=document.createElement('select');select.className='cover-select';select.setAttribute('aria-label',`Hassan Hashem covers on ${DAYS[dayIdx]}`);
+        const none=document.createElement('option');none.value='';none.textContent='Covering…';select.appendChild(none);
+        workerNames.forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;select.appendChild(o);});
+        select.value=w.covers[dayIdx];select.disabled=isReadOnly||saving||st==='off';select.hidden=st==='off';
+        select.onchange=()=>{if(isReadOnly||saving)return;w.covers[dayIdx]=select.value;markDirty();};day.appendChild(select);row.appendChild(day);
+        }else row.appendChild(cell);
       });
       rows.appendChild(row);
     });
@@ -514,6 +453,7 @@ function renderAll(){
 
 // App Initialization
 (function init(){
+  updateSaveUI();
   renderAll();
   listenForRealtimeUpdates();
 })();
